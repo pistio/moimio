@@ -53,7 +53,7 @@ function App() {
       for (let attempt = 0; attempt < 8; attempt++) {
         try {
           const data = await setupApi.status();
-          if (!cancelled) setNeedsSetup(data.needs_setup);
+          if (!cancelled) setNeedsSetup(data.needs_setup || (data.bootstrap_required && /^#bootstrap=[A-Za-z0-9_-]{32,128}$/.test(location.hash)));
           return;
         } catch {
           if (attempt < 7) await new Promise(r => setTimeout(r, 1500));

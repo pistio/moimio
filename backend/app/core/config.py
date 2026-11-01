@@ -13,6 +13,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    # Canonical public origin for Hosted auth/reset links; never trust forwarded hosts.
+    public_origin: str = ""
+
     # ─── Database ───
     database_url: str = "postgresql+asyncpg://moimio:moimio_dev@db:5432/moimio"
 

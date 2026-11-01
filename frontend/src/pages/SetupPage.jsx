@@ -11,6 +11,11 @@ import TranslatedError from '../components/TranslatedError';
 const MOIMIO_VERSION = typeof __MOIMIO_VERSION__ !== 'undefined' ? __MOIMIO_VERSION__ : 'dev';
 
 export default function SetupPage({ onComplete }) {
+  const [bootstrap] = useState(() => {
+    const match = /^#bootstrap=([A-Za-z0-9_-]{32,128})$/.exec(location.hash);
+    if (match) history.replaceState(null, '', location.pathname);
+    return match?.[1];
+  });
   const [form, setForm] = useState({ full_name: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -24,7 +29,7 @@ export default function SetupPage({ onComplete }) {
     if (form.password.length < 8) { setError(t('reset.error.short')); return; }
     setLoading(true);
     try {
-      await setupApi.init({ email: form.email, full_name: form.full_name, password: form.password });
+      await setupApi.init({ email: form.email, full_name: form.full_name, password: form.password, ...(bootstrap ? { bootstrap_token: bootstrap } : {}) });
       onComplete();
     } catch (err) { setError(err); }
     finally { setLoading(false); }

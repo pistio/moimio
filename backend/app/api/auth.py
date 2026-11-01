@@ -3,6 +3,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Cookie, status
 from pydantic import BaseModel
 import secrets
+import uuid
+from sqlalchemy import update
+from app.models import AuthSession
+from app.services import hosted_access as access
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,18 +38,24 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 async def login(
     data: LoginRequest,
     response: Response,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate and return access token. Sets refresh token as httpOnly cookie."""
-    user = await authenticate_user(db, data.email, data.password)
+    await access.profile(db, request, cookie_action=True)
+    user = await authenticate_user(db, data.email.strip().lower(), data.password)
     if not user:
-        logger.warning("login_failed", email=data.email)
+        logger.warning("login_failed")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"key": "errors.auth.invalid_credentials"},
         )
 
-    tokens = generate_tokens(user)
+    sid = uuid.uuid4()
+    tokens = generate_tokens(user, str(sid))
+    db.add(AuthSession(id=sid, user_id=user.id, refresh_digest=access.token_digest(tokens['refresh_token']),
+                       expires_at=access.now() + timedelta(days=settings.refresh_token_expire_days)))
+    await db.flush()
     logger.info("login_success", user_id=str(user.id), role=user.role.value)
 
     # Set refresh token as httpOnly cookie
@@ -53,10 +63,10 @@ async def login(
         key="refresh_token",
         value=tokens["refresh_token"],
         httponly=True,
-        secure=False,  # Set True in production behind HTTPS
-        samesite="lax",
+        secure=await access.cookie_secure(db, request),
+        samesite="strict",
         max_age=settings.refresh_token_expire_days * 86400,
-        path="/api/auth/refresh",
+        path="/api/auth",
     )
 
     return TokenResponse(access_token=tokens["access_token"])
@@ -65,10 +75,12 @@ async def login(
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
     response: Response,
+    request: Request,
     refresh_token: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange a valid refresh token for new access + refresh tokens (rotation)."""
+    await access.profile(db, request, cookie_action=True)
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -76,7 +88,7 @@ async def refresh_token(
         )
 
     payload = decode_token(refresh_token)
-    if payload is None or payload.get("type") != "refresh":
+    if payload is None or payload.get("type") != "refresh" or not await access.valid_session(db, payload):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"key": "errors.auth.refresh_invalid"},
@@ -90,26 +102,43 @@ async def refresh_token(
         )
 
     # Token rotation — issue entirely new pair
-    tokens = generate_tokens(user)
+    tokens = generate_tokens(user, payload['sid'])
+    changed = await db.execute(update(AuthSession).where(AuthSession.id == uuid.UUID(payload['sid']),
+        AuthSession.refresh_digest == access.token_digest(refresh_token), AuthSession.revoked_at.is_(None),
+        AuthSession.expires_at > access.now()).values(refresh_digest=access.token_digest(tokens['refresh_token'])))
+    if changed.rowcount != 1:
+        raise HTTPException(401, detail={'key': 'errors.auth.refresh_invalid'})
     logger.info("token_refreshed", user_id=str(user.id))
 
     response.set_cookie(
         key="refresh_token",
         value=tokens["refresh_token"],
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=await access.cookie_secure(db, request),
+        samesite="strict",
         max_age=settings.refresh_token_expire_days * 86400,
-        path="/api/auth/refresh",
+        path="/api/auth",
     )
 
     return TokenResponse(access_token=tokens["access_token"])
 
 
 @router.post("/logout")
-async def logout(response: Response):
-    """Clear the refresh token cookie."""
-    response.delete_cookie(key="refresh_token", path="/api/auth/refresh")
+async def logout(response: Response, request: Request,
+                 refresh_token: str | None = Cookie(default=None), db: AsyncSession = Depends(get_db)):
+    await access.profile(db, request, cookie_action=True)
+    payload = decode_token(refresh_token) if refresh_token else None
+    if payload and payload.get('sid') and payload.get('type') == 'refresh':
+        try:
+            sid = uuid.UUID(payload['sid'])
+        except (ValueError, TypeError):
+            sid = None
+        if sid:
+            await db.execute(update(AuthSession).where(AuthSession.id == sid,
+                AuthSession.refresh_digest == access.token_digest(refresh_token)).values(revoked_at=access.now()))
+    for path in ('/api/auth', '/api/auth/refresh'):
+        response.delete_cookie('refresh_token', path=path, secure=await access.cookie_secure(db, request),
+                               httponly=True, samesite='strict')
     return {"detail": "Logged out"}
 
 
@@ -166,6 +195,7 @@ async def change_password(
             detail={"key": "errors.auth.current_password_wrong"},
         )
 
+    await access.revoke_user_sessions(db, current_user.id)
     current_user.hashed_password = hash_password(data.new_password)
     db.add(current_user)
     await db.flush()
@@ -190,10 +220,11 @@ async def request_password_reset(
     db: AsyncSession = Depends(get_db),
 ):
     """Request a password reset email. Always returns 200 to avoid user enumeration."""
-    user = await get_user_by_email(db, data.email)
+    await access.profile(db, request, cookie_action=True)
+    user = await get_user_by_email(db, data.email.strip().lower())
     if user and user.is_active:
         token = secrets.token_urlsafe(48)
-        user.password_reset_token = token
+        user.password_reset_token = access.token_digest(token)
         user.password_reset_expires = datetime.now(timezone.utc) + timedelta(minutes=30)
         db.add(user)
         await db.flush()
@@ -215,7 +246,7 @@ async def reset_password(
 ):
     """Reset password using a valid reset token. Expires after 30 minutes."""
     from sqlalchemy import select as _sel
-    result = await db.execute(_sel(User).where(User.password_reset_token == data.token))
+    result = await db.execute(_sel(User).where(User.password_reset_token == access.token_digest(data.token)).with_for_update())
     user = result.scalar_one_or_none()
 
     if not user or not user.is_active:
@@ -231,6 +262,7 @@ async def reset_password(
     if len(data.new_password) < 8:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"key": "errors.auth.password_too_short"})
 
+    await access.revoke_user_sessions(db, user.id)
     user.hashed_password = hash_password(data.new_password)
     user.password_reset_token = None
     user.password_reset_expires = None

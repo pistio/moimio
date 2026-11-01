@@ -31,3 +31,4 @@ from app.models.outbound_webhook import (  # noqa: F401
     WebhookEndpointManagedBy,
     WebhookDeliveryStatus,
 )
+from app.models.hosted_access import AuthSession, BootstrapGrant  # noqa: F401

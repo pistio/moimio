@@ -55,6 +55,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         feature_outbound_webhooks=settings.feature_outbound_webhooks,
     )
 
+    from app.services.hosted_access import profile
+    async with async_session_factory() as db:
+        await profile(db)  # fail before schedulers/provider registration
+
     # v1.0.0g: register the SaaS-managed webhook endpoint if env vars
     # are set. No-op for self-hosters who haven't configured these.
     if (

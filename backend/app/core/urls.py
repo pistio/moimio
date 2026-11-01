@@ -36,20 +36,13 @@ from fastapi import Request
 
 def get_app_base_url(request: Request) -> str:
     """Return the public-facing base URL for this request (no trailing slash)."""
-    # Prefer reverse-proxy-set headers — take the first value if the
-    # header is comma-separated (chained proxies).
-    xf_host = request.headers.get("x-forwarded-host")
-    if xf_host:
-        xf_proto = request.headers.get("x-forwarded-proto") or request.url.scheme
-        proto = xf_proto.split(",")[0].strip()
-        host = xf_host.split(",")[0].strip()
-        return f"{proto}://{host}".rstrip("/")
-
-    # Direct connection (local dev without Caddy). Use the scheme the
-    # request came in on and the raw Host header.
-    host_header = request.headers.get("host")
-    if host_header:
-        return f"{request.url.scheme}://{host_header}".rstrip("/")
-
-    # Synthesised fallback — Starlette always produces something here.
-    return str(request.base_url).rstrip("/")
+    from app.core.config import get_settings
+    from app.services.hosted_access import configured_hosted, origin_value
+    settings = get_settings()
+    if settings.public_origin:
+        return origin_value(settings.public_origin) if configured_hosted() else settings.public_origin.rstrip('/')
+    if configured_hosted():
+        raise ValueError('HOSTED_PUBLIC_ORIGIN_REQUIRED')
+    # Self-hosted direct HTTP stays supported. Forwarded headers are not a
+    # trusted URL authority; reverse proxies must configure public_origin.
+    return str(request.base_url).rstrip('/')

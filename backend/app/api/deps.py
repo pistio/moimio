@@ -1,6 +1,6 @@
 """FastAPI dependencies for authentication and role-based access control."""
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,15 +8,18 @@ from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User, UserRole
 from app.services.auth_service import get_user_by_id
+from app.services.hosted_access import valid_session, profile
 
 bearer_scheme = HTTPBearer()
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Extract and validate JWT, return the authenticated user."""
+    await profile(db, request)
     payload = decode_token(credentials.credentials)
     if payload is None or payload.get("type") != "access":
         raise HTTPException(
@@ -26,7 +29,7 @@ async def get_current_user(
         )
 
     user = await get_user_by_id(db, payload["sub"])
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not await valid_session(db, payload):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"key": "errors.auth.user_not_found_or_inactive"},
@@ -35,6 +38,7 @@ async def get_current_user(
 
 
 async def get_current_user_query_token(
+    request: Request,
     token: str = Query(..., description="JWT access token"),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -44,6 +48,7 @@ async def get_current_user_query_token(
     so the JWT can't ride in the Authorization header. Same JWT format
     and validation as the header form.
     """
+    await profile(db, request)
     payload = decode_token(token)
     if payload is None or payload.get("type") != "access":
         raise HTTPException(
@@ -51,7 +56,7 @@ async def get_current_user_query_token(
             detail={"key": "errors.auth.token_invalid_or_expired"},
         )
     user = await get_user_by_id(db, payload["sub"])
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not await valid_session(db, payload):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"key": "errors.auth.user_not_found_or_inactive"},
