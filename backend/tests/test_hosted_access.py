@@ -330,3 +330,57 @@ async def test_logout_old_valid_cookie_revokes_rotated_session(db, hosted):
             assert (await client.post('/api/auth/refresh')).status_code == 401
     finally:
         app.dependency_overrides.clear()
+
+
+async def test_concurrent_bootstrap_and_refresh_use_real_separate_transactions(db, db_engine, hosted):
+    import asyncio
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    maker=async_sessionmaker(db_engine,expire_on_commit=False)
+    token=await issuer(db,hosted)
+    async def root_transaction():
+        async with maker() as session:
+            try:
+                yield session
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
+    app.dependency_overrides[get_db]=root_transaction
+    body={'email':EMAIL,'full_name':'Fictional buyer','password':PASSWORD,'bootstrap_token':token}
+    ready=asyncio.Event()
+    async def post(path,**kwargs):
+        async with AsyncClient(transport=ASGITransport(app=app),base_url=ORIGIN,headers={'Origin':ORIGIN}) as c:
+            await ready.wait()
+            return await c.post(path,**kwargs)
+    try:
+        tasks=[asyncio.create_task(post('/api/setup/init',json=body)) for _ in range(2)]
+        ready.set()
+        assert sorted(r.status_code for r in await asyncio.gather(*tasks))==[201,403]
+        async with AsyncClient(transport=ASGITransport(app=app),base_url=ORIGIN,headers={'Origin':ORIGIN}) as c:
+            login=await c.post('/api/auth/login',json={'email':EMAIL,'password':PASSWORD})
+            cookie=c.cookies.get('refresh_token')
+        ready.clear()
+        tasks=[asyncio.create_task(post('/api/auth/refresh',headers={'Cookie':'refresh_token='+cookie})) for _ in range(2)]
+        ready.set()
+        results=await asyncio.gather(*tasks)
+        assert sorted(r.status_code for r in results)==[200,401]
+        async with maker() as session:
+            assert await session.scalar(select(func.count()).select_from(User))==1
+            assert await session.scalar(select(func.count()).select_from(AuthSession))==1
+            row=await session.scalar(select(AuthSession))
+            winner=next(r for r in results if r.status_code==200)
+            assert row.refresh_digest==access.token_digest(winner.cookies.get('refresh_token'))
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize('field,value',[('public_origin','http://buyer.fictional.example'),('secret_key','change-me'),('moimio_tenant_id','unknown')])
+async def test_hosted_configuration_cannot_select_insecure_profile(db,hosted,monkeypatch,field,value):
+    monkeypatch.setattr(hosted,field,value)
+    client=await api(db)
+    try:
+        async with client:
+            assert (await client.get('/api/setup/status')).status_code==503
+            assert await db.scalar(select(func.count()).select_from(User))==0
+    finally:
+        app.dependency_overrides.clear()

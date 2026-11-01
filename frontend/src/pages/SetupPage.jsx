@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { setup as setupApi } from '../services/api';
 import { useI18n, SUPPORTED_LANGS } from '../hooks/useI18n';
 import Wordmark from '../components/Wordmark';
@@ -13,9 +13,9 @@ const MOIMIO_VERSION = typeof __MOIMIO_VERSION__ !== 'undefined' ? __MOIMIO_VERS
 export default function SetupPage({ onComplete }) {
   const [bootstrap] = useState(() => {
     const match = /^#bootstrap=([A-Za-z0-9_-]{32,128})$/.exec(location.hash);
-    if (match) history.replaceState(null, '', location.pathname);
     return match?.[1];
   });
+  useEffect(() => { if (bootstrap) history.replaceState(null, '', location.pathname); }, [bootstrap]);
   const [form, setForm] = useState({ full_name: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);

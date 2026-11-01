@@ -1,4 +1,4 @@
-"""Private bootstrap issuance; no HTTP/CLI issuer, environment switch or startup mint.
+"""Private bootstrap issuance; no public HTTP/CLI issuer, environment switch or startup mint.
 
 Provisioning is trusted to establish buyer/payment truth separately. This record
 binds that assertion; it is not proof that Paddle or independent custody did so.
@@ -70,6 +70,8 @@ async def profile(db, request: Request | None = None, *, cookie_action=False):
     s = get_settings()
     grant = await db.scalar(select(BootstrapGrant))
     hosted = configured_hosted() or grant is not None
+    if hosted and (len(s.secret_key) < 32 or s.secret_key == "change-me-in-production"):
+        raise HTTPException(503, detail={"key":"errors.auth.token_invalid_or_expired"})
     if not hosted:
         if request and request.headers.get("origin"):
             allowed = {
@@ -120,6 +122,7 @@ async def issue_bootstrap(
         or get_settings().public_origin != public_origin
     ):
         raise ValueError("BOOTSTRAP_CONFIGURATION_MISMATCH")
+    await profile(db)
     await bootstrap_exclusion(db)
     if await db.scalar(select(func.count()).select_from(User)) or await db.scalar(
         select(func.count()).select_from(BootstrapGrant)

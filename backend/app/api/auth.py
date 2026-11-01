@@ -58,6 +58,9 @@ async def login(
     await db.flush()
     logger.info("login_success", user_id=str(user.id), role=user.role.value)
 
+    # Clear the former narrower-path cookie so it cannot shadow the new one.
+    response.delete_cookie('refresh_token', path='/api/auth/refresh',
+                           secure=await access.cookie_secure(db, request), httponly=True, samesite='strict')
     # Set refresh token as httpOnly cookie
     response.set_cookie(
         key="refresh_token",

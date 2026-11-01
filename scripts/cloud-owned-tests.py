@@ -46,7 +46,7 @@ socket.socket.connect=connect
 socket.socket.connect_ex=connect_ex
 import pytest
 raise SystemExit(pytest.main(sys.argv[1:]))
-""", "-q", "--tb=short", *sys.argv[1:]],
+""", "-q", "-rs", "--tb=short", *sys.argv[1:]],
             cwd=root / "backend",
             env=env,
         )

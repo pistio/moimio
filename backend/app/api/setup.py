@@ -1,7 +1,7 @@
 """Setup routes — first-run wizard."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 import hmac
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,9 +26,9 @@ async def setup_status(request: Request, db: AsyncSession = Depends(get_db)):
 
 class SetupInit(BaseModel):
     email: EmailStr
-    full_name: str
-    password: str
-    bootstrap_token: str | None = None
+    full_name: str = Field(min_length=1,max_length=200)
+    password: str = Field(min_length=8,max_length=128)
+    bootstrap_token: str | None = Field(default=None,max_length=128)
 
 
 @router.post("/init", status_code=201)
