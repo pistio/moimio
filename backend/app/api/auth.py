@@ -135,7 +135,7 @@ async def logout(response: Response, request: Request,
             sid = None
         if sid:
             await db.execute(update(AuthSession).where(AuthSession.id == sid,
-                AuthSession.refresh_digest == access.token_digest(refresh_token)).values(revoked_at=access.now()))
+                AuthSession.user_id == uuid.UUID(payload['sub'])).values(revoked_at=access.now()))
     for path in ('/api/auth', '/api/auth/refresh'):
         response.delete_cookie('refresh_token', path=path, secure=await access.cookie_secure(db, request),
                                httponly=True, samesite='strict')

@@ -307,3 +307,26 @@ async def test_pinned_reset_url_refuses_forwarded_host_substitution(
             ).status_code == 400
     finally:
         app.dependency_overrides.clear()
+
+
+async def test_logout_old_valid_cookie_revokes_rotated_session(db, hosted):
+    token = await issuer(db, hosted)
+    client = await api(db)
+    try:
+        async with client:
+            await client.post('/api/setup/init', json={'email': EMAIL, 'full_name': 'Fictional buyer', 'password': PASSWORD, 'bootstrap_token': token})
+            await client.post('/api/auth/login', json={'email': EMAIL, 'password': PASSWORD})
+            original = client.cookies.get('refresh_token')
+            rotated = await client.post('/api/auth/refresh')
+            new_access = rotated.json()['access_token']
+            newer = client.cookies.get('refresh_token')
+            client.cookies.clear()
+            client.cookies.set('refresh_token', original, domain='buyer.fictional.example', path='/api/auth')
+            assert (await client.post('/api/auth/logout')).status_code == 200
+            assert (await client.get('/api/auth/me', headers={'Authorization': 'Bearer ' + new_access})).status_code == 401
+            await db.rollback()
+            client.cookies.clear()
+            client.cookies.set('refresh_token', newer, domain='buyer.fictional.example', path='/api/auth')
+            assert (await client.post('/api/auth/refresh')).status_code == 401
+    finally:
+        app.dependency_overrides.clear()

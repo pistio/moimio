@@ -17,7 +17,7 @@ def upgrade():
         sa.Column(
             "user_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id"),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column("refresh_digest", sa.String(64), nullable=False),

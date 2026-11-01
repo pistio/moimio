@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix="moimio-core-owned-tests-") as folder:
                 "TEST_DATABASE_URL": uri,
                 "PYTHONPATH": str(root / "backend"),
                 "SECRET_KEY": secrets.token_urlsafe(40),
-                "FEATURE_OUTBOUND_WEBHOOKS": "false",
+                "FEATURE_OUTBOUND_WEBHOOKS": "true",
                 "SMTP_HOST": "",
             }
         )
@@ -33,7 +33,20 @@ with tempfile.TemporaryDirectory(prefix="moimio-core-owned-tests-") as folder:
         if (root / "backend/.env").exists():
             raise RuntimeError("OWNED_TEST_DOTENV_REFUSED")
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "--tb=short", *sys.argv[1:]],
+            [sys.executable, "-c", """import socket,sys
+original=socket.socket.connect
+original_ex=socket.socket.connect_ex
+def connect(s,a):
+    if s.family != socket.AF_UNIX: raise AssertionError('CORE_TEST_EXTERNAL_TCP_REFUSED')
+    return original(s,a)
+def connect_ex(s,a):
+    if s.family != socket.AF_UNIX: raise AssertionError('CORE_TEST_EXTERNAL_TCP_REFUSED')
+    return original_ex(s,a)
+socket.socket.connect=connect
+socket.socket.connect_ex=connect_ex
+import pytest
+raise SystemExit(pytest.main(sys.argv[1:]))
+""", "-q", "--tb=short", *sys.argv[1:]],
             cwd=root / "backend",
             env=env,
         )
