@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useI18n } from '../hooks/useI18n';
 import { passwordReset, formatErrorMessage } from '../services/api';
 import Wordmark from '../components/Wordmark';
@@ -9,8 +8,11 @@ import ThemeToggle from '../components/ThemeToggle';
 const MOIMIO_VERSION = typeof __MOIMIO_VERSION__ !== 'undefined' ? __MOIMIO_VERSION__ : 'dev';
 
 export default function ResetPasswordPage() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
+  const [token] = useState(() => /^#reset=([A-Za-z0-9_-]{32,128})$/.exec(location.hash)?.[1]);
+  useEffect(() => {
+    // Never retain the bearer credential in history or accept old query links.
+    if (location.hash || location.search) history.replaceState(null, '', location.pathname);
+  }, []);
   const { t } = useI18n();
 
   const [password, setPassword] = useState('');

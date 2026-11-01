@@ -231,12 +231,10 @@ async def request_password_reset(
         user.password_reset_expires = datetime.now(timezone.utc) + timedelta(minutes=30)
         db.add(user)
         await db.flush()
-        # v0.61b-2: derive the base URL from the incoming request's
-        # forwarded headers. Works on any domain the operator deploys
-        # to — self-host on arbitrary domains, container-per-tenant
-        # SaaS on tenant subdomains. No per-deployment URL config.
+        # Canonical Hosted origin; credential stays in the browser fragment,
+        # never in the HTTP request target or reverse-proxy query logs.
         base = get_app_base_url(request)
-        reset_url = f"{base}/reset-password?token={token}"
+        reset_url = f"{base}/reset-password#reset={token}"
         send_password_reset_email(user.email, user.full_name, reset_url)
         logger.info("password_reset_requested", user_id=str(user.id))
     return {"detail": "If that email address is registered, you will receive a reset link shortly."}

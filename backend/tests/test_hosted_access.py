@@ -286,10 +286,10 @@ async def test_pinned_reset_url_refuses_forwarded_host_substitution(
                 )
             ).status_code == 200
             assert len(deliveries) == 1 and deliveries[0][2].startswith(
-                ORIGIN + "/reset-password?token="
+                ORIGIN + "/reset-password#reset="
             )
             assert "foreign.invalid" not in deliveries[0][2]
-            raw = deliveries[0][2].split("token=")[1]
+            raw = deliveries[0][2].split("#reset=")[1]
             assert (
                 await db.scalar(select(User))
             ).password_reset_token == access.token_digest(raw)
