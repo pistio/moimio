@@ -49,6 +49,7 @@ pytestmark = pytest.mark.asyncio
 #   "cascade"  — theirs alone, or a grant of access: the row goes.
 #   "set_null" — a record of what happened: the row stays, the person does not.
 REFERENCE_REGISTER = {
+    ("auth_sessions", "user_id"): "cascade",  # session access grants, not documentary history
     ("user_preferences", "user_id"): "cascade",           # theirs alone
     ("event_user_assignments", "user_id"): "cascade",     # a grant of access
     ("notes", "author_id"): "set_null",                   # a record (drafts swept in code)

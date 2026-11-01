@@ -1,0 +1,41 @@
+{
+  "tested_source": "c5c3dc6a8215e5f00172607e10fa653f1d41ac9c",
+  "results": [
+    {
+      "id": "core-buyer",
+      "source_anchor": "or grant.buyer_commitment != access.buyer_commitment(str(data.email))",
+      "test_node": "tests/test_hosted_access.py::test_foreign_first_admin_cannot_claim_hosted",
+      "baseline": "PASSED",
+      "exit": 1,
+      "classification": "INTENDED_ASSERTION",
+      "sanitised_failure": "HTTP/status assertion rejected mutation"
+    },
+    {
+      "id": "core-nonce",
+      "source_anchor": "or not hmac.compare_digest(grant.token_digest, access.token_digest(token))",
+      "test_node": "tests/test_hosted_access.py::test_foreign_first_admin_cannot_claim_hosted",
+      "baseline": "PASSED",
+      "exit": 1,
+      "classification": "INTENDED_ASSERTION",
+      "sanitised_failure": "HTTP/status assertion rejected mutation"
+    },
+    {
+      "id": "core-secure-cookie",
+      "source_anchor": "return bool(await profile(db)) or (",
+      "test_node": "tests/test_hosted_access.py::test_login_refresh_replay_logout_and_access_revocation",
+      "baseline": "PASSED",
+      "exit": 1,
+      "classification": "INTENDED_ASSERTION",
+      "sanitised_failure": "Secure cookie attribute assertion rejected mutation"
+    },
+    {
+      "id": "core-session-revocation",
+      "source_anchor": "row and row.user_id == uid and row.revoked_at is None and row.expires_at > now()",
+      "test_node": "tests/test_hosted_access.py::test_logout_old_valid_cookie_revokes_rotated_session",
+      "baseline": "PASSED",
+      "exit": 1,
+      "classification": "INTENDED_ASSERTION",
+      "sanitised_failure": "HTTP/status assertion rejected mutation"
+    }
+  ]
+}
