@@ -1,0 +1,18 @@
+# Settings for scripts/reset_demo.sh. Copy to reset.conf (next to this file),
+# fill in, chmod 600. The script reads it automatically.
+
+# The tenant's compose template and .env (as the control plane rendered them).
+DEMO_COMPOSE_FILE=/srv/moimio/demo/production.yml
+DEMO_ENV_FILE=/srv/moimio/demo/demo.env
+DEMO_PROJECT=moimio-demo
+
+# The login published on the website.
+DEMO_USER_EMAIL=demo@example.org
+DEMO_USER_PASSWORD=<the password you publish>
+
+# live | registration | keep   (see RUNBOOK.md, "Event dates")
+DEMO_DATES=live
+
+# Optional overrides
+# DEMO_OVERRIDE_FILE=/opt/moimio-demo-kit/compose/demo.override.yml
+# DEMO_DATASET=/opt/moimio-demo-kit/dataset/moimio-demo-workspace.zip

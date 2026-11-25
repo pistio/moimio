@@ -1,0 +1,42 @@
+# Demo-tenant additions to backend/deploy/production.yml.
+#
+# Use it as a second -f file, after the production template:
+#
+#   docker compose -p moimio-demo \
+#     -f production.yml -f demo.override.yml --env-file demo.env up -d
+#
+# What it changes:
+#   1. Pins the Moimio images to v1.0.7. The template in the v1.0.7 release
+#      still says v1.0.5; the demo dataset needs >= v1.0.7 (its registration
+#      form uses "show only if" fields, and RATE_LIMIT_REGISTRATION is only
+#      enforced from v1.0.7). Keep this the same version as the website.
+#   2. Adds Mailpit, which catches every email the app sends. SMTP_HOST in
+#      demo.env must point at it; that is the ONLY thing that keeps demo mail
+#      from leaving the server (FEATURE_DEMO_NOTICE only shows a notice).
+#      No relay options are set, so Mailpit cannot forward anything.
+
+services:
+  backend:
+    image: ghcr.io/pistio/moimio-backend:v1.0.7
+    depends_on:
+      mailpit:
+        condition: service_started
+
+  frontend:
+    image: ghcr.io/pistio/moimio-frontend:v1.0.7
+
+  mailpit:
+    image: ghcr.io/axllent/mailpit:v1.21.0
+    restart: unless-stopped
+    environment:
+      MP_WEBROOT: mail                     # UI at https://<demo host>/mail/
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"      # Moimio always logs in to SMTP
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"  # ... over a plain internal connection
+      MP_MAX_MESSAGES: "500"               # oldest mail is dropped beyond this
+      MP_MAX_AGE: "2d"
+    networks:
+      internal: {}
+      public:
+        # A name only this tenant uses on the shared network, so the outer
+        # Caddy can route https://<demo host>/mail/* to it.
+        aliases: [moimio-demo-mailpit]
